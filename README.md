@@ -165,7 +165,7 @@ Transform the time series into a trajectory matrix **X** (Hankel matrix):
      │ x₁   x₂   x₃  ...  xₙ   │
 X =  │ x₂   x₃   x₄  ...  xₙ₊₁ │
      │ ...  ...  ... ...  ...  │
-     │ xₗ   xₗ₊₁ xₗ₊₂... xₜ   │
+     │ xₗ   xₗ₊₁  xₗ₊₂ ...   xₜ   │
      └                         ┘
 ```
 
