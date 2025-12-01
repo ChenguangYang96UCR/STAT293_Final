@@ -130,7 +130,7 @@ est_total_list <- fit$mats$total
 
 **Frobenius Norm Error**:
 
-$$\|\hat{\mathbf{B}} - \mathbf{B}^*\|_F = \sqrt{\sum_{i,j} (\hat{B}_{ij} - \hat{B}_{ij})^2}$$
+$$\|\hat{\mathbf{B}} - \mathbf{B}^*\|_F = \sqrt{\sum_{i,j} (\hat{B}_{ij} - \hat{B}^*_{ij})^2}$$
 
 ### Forecasting Performance
 
