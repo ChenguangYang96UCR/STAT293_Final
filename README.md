@@ -88,7 +88,6 @@ cissa-r/
 ├── cissa.R                # Core CiSSA implementation
 ├── cissa_examples.R       # Example scripts
 ├── cissa_tutorial.Rmd     # R Markdown tutorial
-└── LICENSE                # License file
 ```
 
 ## 📖 Documentation
