@@ -1,205 +1,347 @@
-# Multi-VAR: Penalized Estimation of Multiple Subject VAR Models
+# CiSSA: Circulant Singular Spectrum Analysis
 
-A simulation study and implementation for penalized estimation and forecasting of multiple subject intensive longitudinal data (ILD) using the multi-VAR framework.
+[![R](https://img.shields.io/badge/R-%3E%3D%203.5.0-blue.svg)](https://www.r-project.org/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-## Overview
+An R implementation of **Circulant Singular Spectrum Analysis (CiSSA)**, an automated signal extraction procedure for time series decomposition.
 
-This project implements and evaluates the **multi-VAR framework** proposed by [Fisher et al. (2022)](https://doi.org/10.1007/s11336-021-09825-7) for analyzing multivariate time series data collected from multiple individuals. The framework addresses key challenges in intensive longitudinal data analysis:
+## 📖 Overview
 
-- **High-dimensional estimation**: When time series lengths are comparable to the number of variables
-- **Between-person heterogeneity**: Balancing group-level commonalities with individual-specific dynamics
-- **Sparse VAR modeling**: Using LASSO regularization to identify meaningful dynamic relationships
+CiSSA is a novel variant of Singular Spectrum Analysis that automatically extracts signals associated with any pre-specified frequency. Unlike traditional SSA methods that require post-hoc frequency identification, CiSSA directly links eigenvalues and eigenvectors to specific frequencies through the use of circulant matrices.
 
-## Theoretical Background
+### Key Features
 
-### The Multi-VAR Model
+- **Automated frequency matching**: No need for manual frequency identification
+- **Power spectral density estimation**: Eigenvalues directly approximate the PSD
+- **Flexible decomposition**: Extract trend, cycle, seasonal, and irregular components
+- **Nonstationary support**: Theoretical framework extended for nonstationary time series
+- **Strong separability**: Produces well-separated (orthogonal) components
 
-The multi-VAR approach decomposes each individual's transition matrix as:
+## 📚 Reference
 
-$$\mathbf{B}_k^* = \boldsymbol{\mu}^* + \boldsymbol{\Delta}_k^*, \quad k = 1, \ldots, K$$
+This implementation is based on:
 
-Where:
-- $\boldsymbol{\mu}^*$ represents **common effects** shared across all individuals
-- $\boldsymbol{\Delta}_k^*$ represents **individual-specific effects** unique to subject $k$
+> Bógalo, J., Poncela, P., & Senra, E. (2021). **Circulant singular spectrum analysis: A new automated procedure for signal extraction**. *Signal Processing*, 179, 107824. [https://doi.org/10.1016/j.sigpro.2020.107824](https://doi.org/10.1016/j.sigpro.2020.107824)
 
-### Optimization Problem
+## 🚀 Quick Start
 
-The framework solves the following penalized optimization:
+### Installation
 
-$$(\hat{\boldsymbol{\mu}}, \hat{\boldsymbol{\Delta}}_1, \ldots, \hat{\boldsymbol{\Delta}}_K) = \arg\min_{\boldsymbol{\mu}, \boldsymbol{\Delta}_1, \ldots, \boldsymbol{\Delta}_K} \frac{1}{N} \sum_{k=1}^{K} \|\mathbf{Y}^{(k)} - \mathbf{Z}^{(k)}(\boldsymbol{\mu} + \boldsymbol{\Delta}_k)\|_2^2 + \lambda_1 \|\boldsymbol{\mu}\|_1 + \sum_{k=1}^{K} \lambda_{2,k} \|\boldsymbol{\Delta}_k\|_1$$
-
-### Key Properties
-
-- If individuals share little in common → returns essentially independent VAR solutions
-- If individuals are homogeneous → returns a pooled model for all subjects
-- For intermediate cases → adaptively balances common and unique dynamics
-
-## Project Structure
-
-```
-.
-├── sta293_project.Rmd    # Main analysis and simulation code
-├── README.md             # This file
-```
-
-## Simulation Study
-
-### Data Generation
-
-The simulation generates multi-subject VAR(1) time series with:
-
-1. **Common transition matrix** ($\mathbf{B}_{common}$): Shared structure across all subjects
-2. **Individual deviations** ($\mathbf{B}_{unique}$): Subject-specific perturbations
-3. **Total dynamics** ($\mathbf{B}_{total}$): Combined effect for each individual
+Clone the repository and source the main file:
 
 ```r
-generate_multi_var <- function(
-    K = 8,                    # Number of subjects
-    d = 8,                    # Dimension (variables)
-    T = 200,                  # Time series length
-    prop_common = 0.30,       # Density of common matrix
-    prop_unique = 0.10,       # Individual deviation level
-    min_edges_per_row = 2     # Minimum connections per variable
-)
+# Clone the repository
+# git clone https://github.com/yourusername/cissa-r.git
+
+# In R, source the main file
+source("cissa.R")
 ```
 
-### Stability Constraints
-
-All transition matrices are stabilized to ensure stationarity:
-
-$$\max|\text{eigenvalues}(\mathbf{B})| < 1$$
-
-### Experimental Conditions
-
-The project evaluates multi-VAR performance across:
-
-| Condition | Dimension (d) | Time Points (T) | Subjects (K) |
-|-----------|---------------|-----------------|--------------|
-| Low T     | 8             | 200             | 15           |
-| High T    | 8             | 500             | 15           |
-| High d    | 10            | 500             | 15           |
-
-## Implementation
-
-### Dependencies
+### Basic Usage
 
 ```r
-install.packages(c("multivar", "MASS", "ggplot2", "reshape2", 
-                   "gridExtra", "patchwork"))
+# Load CiSSA
+source("cissa.R")
+
+# Generate example data
+set.seed(42)
+t <- 1:200
+trend <- 10 + 0.05 * t
+seasonal <- 3 * sin(2 * pi * t / 12)
+noise <- rnorm(200, 0, 1)
+x <- trend + seasonal + noise
+
+# Apply CiSSA
+L <- 48  # Window length
+result <- cissa(x, L = L)
+
+# Print summary
+print(result)
+
+# Plot power spectral density
+plot_psd(result)
 ```
 
-### Model Fitting
+### Extract Specific Components
 
 ```r
-library(multivar)
-
-# Construct model specification
-model <- constructModel(
-  data        = sim$data,      # List of K time series matrices
-  lag         = 1,             # VAR lag order
-  t1          = 60,            # CV start index
-  t2          = 120,           # CV end index
-  cv          = "blocked",     # Cross-validation type
-  nfolds      = 5,             # Number of CV folds
-  lassotype   = "adaptive",    # Adaptive LASSO for oracle properties
-  standardize = TRUE           # Standardize variables
+# Define frequency groups
+groups <- list(
+  Trend = c(1, 2),           # Low frequencies (trend)
+  Seasonal = c(5, 9, 13),    # Seasonal frequencies
+  Cycle = c(3, 4)            # Business cycle frequencies
 )
 
-# Fit model with cross-validation
-fit <- cv.multivar(model)
+# Apply CiSSA with grouping
+result <- cissa(x, L = 48, groups = groups)
+
+# Access extracted components
+trend_component <- result$grouped_series$Trend
+seasonal_component <- result$grouped_series$Seasonal
 ```
 
-### Extracting Results
+## 📁 Repository Structure
+
+```
+cissa-r/
+├── README.md              # This file
+├── cissa.R                # Core CiSSA implementation
+├── cissa_examples.R       # Example scripts
+├── cissa_tutorial.Rmd     # R Markdown tutorial
+└── LICENSE                # License file
+```
+
+## 📖 Documentation
+
+### Main Function
+
+#### `cissa(x, L, groups = NULL)`
+
+Performs Circulant Singular Spectrum Analysis on a time series.
+
+**Parameters:**
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `x` | numeric vector | Input time series |
+| `L` | integer | Window length (must satisfy `1 < L < T/2`) |
+| `groups` | list (optional) | Named list of frequency group indices |
+
+**Returns:** A list of class `"cissa"` containing:
+| Element | Description |
+|---------|-------------|
+| `eigenvalues` | Power spectral density estimates at each frequency |
+| `frequencies` | Frequencies `w_k = (k-1)/L` for `k = 1, ..., L` |
+| `contributions` | Relative contribution of each frequency |
+| `elementary_series` | List of reconstructed series by frequency |
+| `grouped_series` | Reconstructed series for each defined group |
+| `trajectory_matrix` | The L × N trajectory matrix |
+| `L`, `T`, `N` | Dimensions |
+
+### Helper Functions
+
+| Function | Description |
+|----------|-------------|
+| `compute_autocovariances(x, max_lag)` | Compute sample autocovariances |
+| `compute_circulant_elements(gamma_hat, L)` | Build circulant matrix elements |
+| `build_trajectory_matrix(x, L)` | Create the trajectory matrix |
+| `diagonal_averaging(X_tilde)` | Hankelization for reconstruction |
+| `freq_to_index(freq, L)` | Convert frequency to eigenvalue index |
+| `get_seasonal_indices(L, period)` | Get indices for seasonal frequencies |
+| `get_cycle_indices(L, min_period, max_period)` | Get indices for cycle frequencies |
+
+### Visualization Functions
+
+| Function | Description |
+|----------|-------------|
+| `plot_psd(result, log_scale, main)` | Plot power spectral density |
+| `plot_contributions(result, top_n)` | Bar plot of frequency contributions |
+| `plot_decomposition(x, result)` | Plot original and extracted components |
+| `plot_wcorr(wcorr, main)` | Plot w-correlation matrix heatmap |
+
+### Analysis Functions
+
+| Function | Description |
+|----------|-------------|
+| `compute_wcorr(result, max_components)` | Compute w-correlation matrix for separability analysis |
+| `simulate_structural_ts(...)` | Simulate structural time series for testing |
+
+## 🔧 Algorithm Details
+
+### The CiSSA Algorithm
+
+CiSSA consists of four main steps:
+
+```
+┌─────────────┐    ┌───────────────┐    ┌──────────┐    ┌────────────────┐
+│ 1.Embedding │ -> │2.Decomposition│ -> │3.Grouping│ -> │4.Reconstruction│
+└─────────────┘    └───────────────┘    └──────────┘    └────────────────┘
+```
+
+#### Step 1: Embedding
+
+Transform the time series into a trajectory matrix **X** (Hankel matrix):
+
+```
+     ┌                         ┐
+     │ x₁   x₂   x₃  ...  xₙ   │
+X =  │ x₂   x₃   x₄  ...  xₙ₊₁ │
+     │ ...  ...  ... ...  ...  │
+     │ xₗ   xₗ₊₁ xₗ₊₂... xₜ   │
+     └                         ┘
+```
+
+#### Step 2: Decomposition
+
+Build a circulant matrix **S_C** with elements:
+
+$$\hat{c}_m = \frac{L-m}{L}\hat{\gamma}_m + \frac{m}{L}\hat{\gamma}_{L-m}, \quad m = 0, 1, \ldots, L-1$$
+
+The eigenvalues are computed via FFT and satisfy:
+
+$$\lambda_k = f\left(\frac{k-1}{L}\right)$$
+
+where $f$ is the power spectral density.
+
+#### Step 3: Grouping
+
+Group eigenvalue pairs by frequency:
+- **B₁ = {1}**: Trend (frequency 0)
+- **Bₖ = {k, L+2-k}**: Frequency wₖ = (k-1)/L
+
+#### Step 4: Reconstruction
+
+Apply diagonal averaging (Hankelization) to reconstruct components.
+
+### Frequency-Index Relationship
+
+For window length L, the k-th eigenvalue corresponds to frequency:
+
+$$w_k = \frac{k-1}{L}, \quad k = 1, 2, \ldots, L$$
+
+**Common frequency mappings for monthly data (L=48):**
+
+| Component | Frequency | Period | Index k |
+|-----------|-----------|--------|---------|
+| Trend | 0 | ∞ | 1 |
+| 4-year cycle | 1/48 | 48 months | 2 |
+| Annual | 1/12 | 12 months | 5 |
+| Semi-annual | 1/6 | 6 months | 9 |
+| Quarterly | 1/4 | 4 months | 13 |
+
+## 📊 Examples
+
+### Example 1: Economic Time Series Decomposition
 
 ```r
-# Common (group-level) transition matrix
-est_common_mat <- fit$mats$common
+source("cissa.R")
 
-# Individual total transition matrices
-est_total_list <- fit$mats$total
+# Simulate Industrial Production-like data
+set.seed(123)
+T <- 537
+t <- 1:T
+
+trend <- 50 + 0.1 * t
+cycle <- 8 * sin(2 * pi * t / 72)  # 6-year cycle
+seasonal <- 5 * sin(2 * pi * t / 12)
+irregular <- rnorm(T, 0, 2)
+x <- trend + cycle + seasonal + irregular
+
+# Apply CiSSA with L = 192
+L <- 192
+groups <- list(
+  Trend = c(1, 2),
+  Cycle = 3:11,
+  Seasonal = c(17, 33, 49, 65, 81, 97)
+)
+
+result <- cissa(x, L = L, groups = groups)
+
+# Visualize
+par(mfrow = c(4, 1), mar = c(3, 4, 2, 1))
+plot(x, type = "l", main = "Original Series")
+plot(result$grouped_series$Trend, type = "l", main = "Trend", col = "blue")
+plot(result$grouped_series$Cycle, type = "l", main = "Cycle", col = "green")
+plot(result$grouped_series$Seasonal, type = "l", main = "Seasonal", col = "orange")
 ```
 
-## Evaluation Metrics
-
-### Parameter Recovery
-
-- **Sensitivity**: Proportion of true non-zero coefficients correctly identified
-- **Specificity**: Proportion of true zero coefficients correctly identified
-
-### Estimation Error
-
-**Frobenius Norm Error**:
-
-$$\|\hat{\mathbf{B}} - \mathbf{B}^*\|_F = \sqrt{\sum_{i,j} (\hat{B}_{ij} - \hat{B}^*_{ij})^2}$$
-
-### Forecasting Performance
-
-**Root Mean Square Forecast Error (RMSFE)**:
-
-$$\text{RMSFE} = \frac{1}{K} \sum_{k=1}^{K} \sqrt{\frac{1}{d} \sum_{j=1}^{d} (\hat{Y}_{j,t+h}^{(k)} - Y_{j,t+h}^{(k)})^2}$$
-
-## Visualization
-
-The project includes heatmap visualizations for comparing:
-
-1. **True vs. Estimated Common Matrix**: Group-level dynamics recovery
-2. **True vs. Estimated Total Matrices**: Subject-specific dynamics
-3. **Path Frequency Counts**: Cross-individual pattern consistency
+### Example 2: Separability Analysis
 
 ```r
-plot_common_matrix <- function(M, title = "Common Matrix") {
-  # Creates diverging heatmap (red-white-blue scale)
-  # Red: negative effects, Blue: positive effects, White: zero
-}
+# Compute w-correlation matrix
+wcorr <- compute_wcorr(result, max_components = 25)
+
+# Plot
+plot_wcorr(wcorr, main = "W-Correlation Matrix")
+
+# Check separability statistics
+off_diag <- wcorr[upper.tri(wcorr)]
+cat("Mean |correlation|:", mean(abs(off_diag)), "\n")
+cat("Proportion |ρ| < 0.1:", mean(abs(off_diag) < 0.1) * 100, "%\n")
 ```
 
-## Key Findings from Fisher et al. (2022)
+### Example 3: AM-FM Signal Analysis
 
-### Simulation Results
+```r
+# Generate AM-FM signal (from Section 6 of the paper)
+fs <- 100  # Sample frequency
+t <- seq(0, 10, length.out = 1000)
 
-- Multi-VAR approaches showed **higher sensitivity** (0.94) compared to individual LASSO (0.87)
-- **Specificity** remained high (0.73-0.80) across methods
-- Common effects recovered with **near-perfect sensitivity** (0.99)
-- Performance improved with longer time series
+# AM signal
+x1 <- (1 + 0.2 * sin(2 * pi * 1 * t)) * cos(2 * pi * 5 * t)
 
-### Empirical Application
+# FM signal (chirp)
+x2 <- 0.1 * cos(2 * pi * (40 * t + 25 * t^2 / 20))
 
-Applied to emotional dynamics data from Fredrickson et al. (2017):
-- 16 subjects, 20 emotion variables, 77-day observation period
-- Multi-VAR achieved lowest 1-step RMSFE (0.75-0.76)
-- Outperformed benchmark methods (Mean, AR(1), VAR(1), LASSO)
+x <- x1 + x2
 
-## Citation
+# Apply CiSSA
+result <- cissa(x, L = 200)
 
-If you use this code, please cite:
-
-```bibtex
-@article{fisher2022penalized,
-  title={Penalized estimation and forecasting of multiple subject intensive longitudinal data},
-  author={Fisher, Zachary F and Kim, Younghoon and Fredrickson, Barbara L and Pipiras, Vladas},
-  journal={Psychometrika},
-  volume={87},
-  number={2},
-  pages={403--431},
-  year={2022},
-  publisher={Springer},
-  doi={10.1007/s11336-021-09825-7}
-}
+# Plot PSD
+plot_psd(result, main = "AM-FM Signal PSD")
 ```
 
-## Related Resources
+## 📋 Choosing Window Length
 
-- **multivar R package**: [CRAN](https://CRAN.R-project.org/package=multivar)
-- **GIMME package**: Alternative approach for multiple-subject time series
-- **Original paper**: [Psychometrika (2022)](https://doi.org/10.1007/s11336-021-09825-7)
+| Data Type | Recommended L | Rationale |
+|-----------|---------------|-----------|
+| Monthly economic | Multiple of 12 & cycle length | Captures seasonality and business cycles |
+| Quarterly data | Multiple of 4 | Captures quarterly patterns |
+| Daily data | 365 or 252 (trading days) | Annual patterns |
+| High-frequency | ≥ 2 × max expected period | Nyquist-like criterion |
 
-## License
+**General rules:**
+- L should be a multiple of all expected periodicities
+- L < T/2 (required constraint)
+- Larger L → better frequency resolution but more computation
 
-This project is for educational and research purposes. The `multivar` package is maintained by Zachary F. Fisher.
+## 🧪 Validation
 
-## Author
+The implementation has been validated through:
 
-Chenguang Yang, Bufan Zhou
+1. **Monte Carlo simulations** replicating Table 1 from the paper
+2. **Comparison with true components** in simulated data
+3. **W-correlation analysis** confirming strong separability
 
-STA 293 Project - UC Riverside  
-Date: November 2025
+Run the validation:
+
+```r
+source("cissa_examples.R")
+example_simulation_study(n_sim = 100)
+```
+
+## 📝 Tutorial
+
+For a comprehensive tutorial with explanations and visualizations, see the R Markdown document:
+
+```r
+# Open in RStudio and knit to HTML
+rmarkdown::render("cissa_tutorial.Rmd")
+```
+
+## 🤝 Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request.
+
+1. Fork the repository
+2. Create your feature branch (`git checkout -b feature/AmazingFeature`)
+3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
+4. Push to the branch (`git push origin feature/AmazingFeature`)
+5. Open a Pull Request
+
+## 📄 License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## 🙏 Acknowledgments
+
+- Original paper authors: Juan Bógalo, Pilar Poncela, and Eva Senra
+- The SSA community for foundational work on singular spectrum analysis
+
+## 📧 Contact
+
+For questions or issues, please open an issue on GitHub.
+
+---
+
+**Note**: This is an educational implementation. For production use, consider additional testing and optimization for your specific use case.

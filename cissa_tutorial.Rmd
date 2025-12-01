@@ -1,0 +1,814 @@
+---
+title: "Circulant Singular Spectrum Analysis (CiSSA)"
+subtitle: "A Tutorial with R Implementation"
+author: "Based on Bógalo, Poncela & Senra (2021)"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_depth: 3
+    toc_float: true
+    number_sections: true
+    theme: flatly
+    highlight: tango
+    code_folding: show
+    df_print: paged
+  pdf_document:
+    toc: true
+    number_sections: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  message = FALSE,
+  warning = FALSE,
+  fig.width = 10,
+  fig.height = 6,
+  fig.align = "center"
+)
+```
+
+# Introduction
+
+## What is CiSSA?
+
+**Circulant Singular Spectrum Analysis (CiSSA)** is an automated signal extraction procedure proposed by Bógalo, Poncela, and Senra in their 2021 paper published in *Signal Processing*. 
+
+The key innovation of CiSSA is that it allows you to **extract signals associated with any pre-specified frequency automatically**, without the need for post-hoc frequency identification that traditional SSA methods require.
+
+## Key Advantages
+
+1. **Automated frequency matching**: Eigenvalues and eigenvectors are directly linked to specific frequencies
+2. **Power spectral density estimation**: Eigenvalues approximate the PSD at matched frequencies
+3. **Asymptotic equivalence**: Proven equivalent to Basic SSA and Toeplitz SSA
+4. **Works for nonstationary data**: Extended theoretical framework for nonstationary time series
+
+## Paper Reference
+
+> Bógalo, J., Poncela, P., & Senra, E. (2021). Circulant singular spectrum analysis: A new automated procedure for signal extraction. *Signal Processing*, 179, 107824.
+
+---
+
+# Load the CiSSA Implementation
+
+First, we need to source the main CiSSA functions:
+
+```{r load-cissa}
+# Source the CiSSA implementation
+source("cissa.R")
+```
+
+---
+
+# The CiSSA Algorithm
+
+## Overview
+
+The CiSSA algorithm consists of **4 main steps**:
+
+```{r algorithm-diagram, echo=FALSE, fig.height=3}
+# Create a simple flowchart
+par(mar = c(1, 1, 1, 1))
+plot.new()
+plot.window(xlim = c(0, 10), ylim = c(0, 3))
+
+# Boxes
+rect(0.5, 1, 2.5, 2, col = "lightblue", border = "darkblue", lwd = 2)
+rect(3, 1, 5, 2, col = "lightgreen", border = "darkgreen", lwd = 2)
+rect(5.5, 1, 7.5, 2, col = "lightyellow", border = "orange", lwd = 2)
+rect(8, 1, 10, 2, col = "lightpink", border = "red", lwd = 2)
+
+# Labels
+text(1.5, 1.5, "Step 1:\nEmbedding", cex = 0.9, font = 2)
+text(4, 1.5, "Step 2:\nDecomposition", cex = 0.9, font = 2)
+text(6.5, 1.5, "Step 3:\nGrouping", cex = 0.9, font = 2)
+text(9, 1.5, "Step 4:\nReconstruction", cex = 0.9, font = 2)
+
+# Arrows
+arrows(2.5, 1.5, 3, 1.5, lwd = 2, length = 0.1)
+arrows(5, 1.5, 5.5, 1.5, lwd = 2, length = 0.1)
+arrows(7.5, 1.5, 8, 1.5, lwd = 2, length = 0.1)
+```
+
+## Step 1: Embedding
+
+Transform the time series into a **trajectory matrix**:
+
+$$\mathbf{X} = \begin{pmatrix} x_1 & x_2 & \cdots & x_N \\ x_2 & x_3 & \cdots & x_{N+1} \\ \vdots & \vdots & \ddots & \vdots \\ x_L & x_{L+1} & \cdots & x_T \end{pmatrix}$$
+
+where $L$ is the window length and $N = T - L + 1$.
+
+## Step 2: Decomposition
+
+Instead of using the standard covariance matrix, CiSSA uses a **circulant matrix** $\mathbf{S}_C$ with elements:
+
+$$\hat{c}_m = \frac{L-m}{L}\hat{\gamma}_m + \frac{m}{L}\hat{\gamma}_{L-m}$$
+
+The eigenvalues of this circulant matrix have a **closed-form solution**:
+
+$$\lambda_k = f\left(\frac{k-1}{L}\right)$$
+
+This means the $k$-th eigenvalue approximates the **power spectral density** at frequency $w_k = \frac{k-1}{L}$.
+
+## Step 3: Grouping
+
+Group eigenvalue pairs based on frequency:
+- $B_1 = \{1\}$ for the trend (frequency 0)
+- $B_k = \{k, L+2-k\}$ for frequencies $w_k = \frac{k-1}{L}$
+
+## Step 4: Reconstruction
+
+Apply **diagonal averaging** (Hankelization) to reconstruct the signal components.
+
+---
+
+# Example 1: Monthly Time Series Decomposition
+
+## Simulate Industrial Production-like Data
+
+This example mimics the Industrial Production analysis from Section 5.1 of the paper.
+
+```{r example1-simulate}
+# Set seed for reproducibility
+set.seed(123)
+
+# Parameters
+T <- 537  # Similar to the paper's IP data (Jan 1970 - Sep 2014)
+t <- 1:T
+
+# Create components
+# Trend: Smooth upward trend with some curvature
+trend <- 50 + 0.1 * t + 20 * sin(2 * pi * t / (T * 1.5))
+
+# Business cycle: 4-8 year cycles (48-96 months)
+cycle <- 8 * sin(2 * pi * t / 72) +  # ~6 year cycle
+         4 * sin(2 * pi * t / 48)     # ~4 year cycle
+
+# Seasonal component: Monthly seasonality (period = 12)
+seasonal <- 5 * sin(2 * pi * t / 12) + 
+            2 * cos(2 * pi * 2 * t / 12) +
+            1 * sin(2 * pi * 3 * t / 12)
+
+# Irregular component
+irregular <- rnorm(T, 0, 2)
+
+# Combined series
+x <- trend + cycle + seasonal + irregular
+```
+
+## Visualize the Simulated Data
+
+```{r example1-plot-data, fig.height=8}
+par(mfrow = c(5, 1), mar = c(3, 4, 2, 1))
+
+plot(x, type = "l", main = "Combined Series (Observed Data)", 
+     ylab = "Value", col = "black", lwd = 1)
+
+plot(trend, type = "l", main = "True Trend Component", 
+     ylab = "Value", col = "blue", lwd = 1.5)
+
+plot(cycle, type = "l", main = "True Business Cycle Component", 
+     ylab = "Value", col = "green", lwd = 1.5)
+
+plot(seasonal, type = "l", main = "True Seasonal Component", 
+     ylab = "Value", col = "orange", lwd = 1.5)
+
+plot(irregular, type = "l", main = "True Irregular Component", 
+     ylab = "Value", col = "gray", lwd = 1)
+
+par(mfrow = c(1, 1))
+```
+
+## Apply CiSSA
+
+We use window length $L = 192$ as recommended in the paper for monthly data with business cycles.
+
+```{r example1-cissa}
+# Window length (as in the paper for IP analysis)
+L <- 192
+
+# Define frequency groups according to the paper's methodology
+# For L = 192, frequency w_k = (k-1)/192
+
+# Trend: frequencies 0 and very low (k = 1, 2)
+trend_indices <- c(1, 2)
+
+# Cycle: k = 3 to 11 (frequencies 2/192 to 10/192)
+# This corresponds to periods of 96 to 19.2 months (8 years to 1.6 years)
+cycle_indices <- 3:11
+
+# Seasonal: frequencies that are multiples of 1/12
+# 1/12 = 16/192 -> k = 17
+# 1/6 = 32/192 -> k = 33
+# 1/4 = 48/192 -> k = 49
+# 1/3 = 64/192 -> k = 65
+# 5/12 = 80/192 -> k = 81
+# 1/2 = 96/192 -> k = 97
+seasonal_indices <- c(17, 33, 49, 65, 81, 97)
+
+# Create groups list
+groups <- list(
+  Trend = trend_indices,
+  Cycle = cycle_indices,
+  Seasonal = seasonal_indices
+)
+
+# Apply CiSSA
+result <- cissa(x, L = L, groups = groups)
+
+# Print summary
+print(result)
+```
+
+## Analyze Component Contributions
+
+```{r example1-contributions}
+# Calculate variance contributions
+total_var <- var(x)
+
+contributions <- data.frame(
+  Component = c("Trend", "Cycle", "Seasonal", "Irregular"),
+  Variance = c(
+    var(result$grouped_series$Trend),
+    var(result$grouped_series$Cycle),
+    var(result$grouped_series$Seasonal),
+    var(x - result$grouped_series$Trend - 
+          result$grouped_series$Cycle - 
+          result$grouped_series$Seasonal)
+  )
+)
+
+contributions$Percentage <- round(contributions$Variance / total_var * 100, 2)
+
+knitr::kable(contributions, 
+             caption = "Component Contributions to Total Variance",
+             col.names = c("Component", "Variance", "Contribution (%)"))
+```
+
+## Evaluate Extraction Quality
+
+```{r example1-quality}
+# Correlation between true and extracted components
+quality <- data.frame(
+  Component = c("Trend", "Cycle", "Seasonal"),
+  Correlation = c(
+    cor(result$grouped_series$Trend, trend),
+    cor(result$grouped_series$Cycle, cycle),
+    cor(result$grouped_series$Seasonal, seasonal)
+  )
+)
+
+quality$Correlation <- round(quality$Correlation, 4)
+
+knitr::kable(quality,
+             caption = "Extraction Quality: Correlation with True Components")
+```
+
+## Visualize Extracted Components
+
+```{r example1-visualization, fig.height=10}
+par(mfrow = c(4, 1), mar = c(3, 4, 2, 1))
+
+# Trend
+plot(result$grouped_series$Trend, type = "l", 
+     main = "Trend: Extracted vs True", 
+     ylab = "Value", col = "blue", lwd = 1.5)
+lines(trend, col = "red", lty = 2, lwd = 1.5)
+legend("topleft", c("CiSSA Extracted", "True"), 
+       col = c("blue", "red"), lty = c(1, 2), lwd = 1.5, cex = 0.8)
+
+# Cycle
+plot(result$grouped_series$Cycle, type = "l", 
+     main = "Business Cycle: Extracted vs True", 
+     ylab = "Value", col = "blue", lwd = 1.5)
+lines(cycle, col = "red", lty = 2, lwd = 1.5)
+legend("topright", c("CiSSA Extracted", "True"), 
+       col = c("blue", "red"), lty = c(1, 2), lwd = 1.5, cex = 0.8)
+
+# Seasonal (first 3 years for clarity)
+plot(result$grouped_series$Seasonal[1:36], type = "l", 
+     main = "Seasonal Component (First 3 Years): Extracted vs True", 
+     ylab = "Value", xlab = "Month", col = "blue", lwd = 1.5)
+lines(seasonal[1:36], col = "red", lty = 2, lwd = 1.5)
+legend("topright", c("CiSSA Extracted", "True"), 
+       col = c("blue", "red"), lty = c(1, 2), lwd = 1.5, cex = 0.8)
+
+# Residual
+residual <- x - result$grouped_series$Trend - 
+                result$grouped_series$Cycle - 
+                result$grouped_series$Seasonal
+plot(residual, type = "l", 
+     main = "Residual (Irregular): Extracted vs True", 
+     ylab = "Value", col = "gray", lwd = 1)
+lines(irregular, col = "red", lty = 2, lwd = 1)
+legend("topright", c("Residual", "True Irregular"), 
+       col = c("gray", "red"), lty = c(1, 2), cex = 0.8)
+
+par(mfrow = c(1, 1))
+```
+
+## Power Spectral Density
+
+```{r example1-psd, fig.height=5}
+# Plot PSD with error handling
+tryCatch({
+  plot_psd(result, main = "CiSSA Power Spectral Density Estimate")
+  
+  # Add vertical lines for key frequencies
+  abline(v = 1/12, col = "orange", lty = 2, lwd = 2)  # Seasonal
+  abline(v = 1/48, col = "green", lty = 2, lwd = 2)   # Cycle (~4 years)
+  abline(v = 1/72, col = "green", lty = 3, lwd = 2)   # Cycle (~6 years)
+  
+  legend("topright", 
+         c("PSD", "Seasonal (1/12)", "Cycle (1/48)", "Cycle (1/72)"),
+         col = c("blue", "orange", "green", "green"),
+         lty = c(1, 2, 2, 3), lwd = 2, cex = 0.8)
+}, error = function(e) {
+  # Fallback: plot in linear scale
+  n_freqs <- floor(result$L / 2)
+  freqs <- result$frequencies[1:n_freqs]
+  psd <- pmax(result$eigenvalues[1:n_freqs], 0)
+  
+  plot(freqs, psd, type = "l",
+       main = "CiSSA Power Spectral Density (Linear Scale)",
+       xlab = "Normalized Frequency", ylab = "PSD",
+       col = "blue", lwd = 1.5)
+  grid()
+  
+  abline(v = 1/12, col = "orange", lty = 2, lwd = 2)
+  abline(v = 1/48, col = "green", lty = 2, lwd = 2)
+})
+```
+
+---
+
+# Example 2: Monte Carlo Simulation Study
+
+This example replicates the simulation study from Section 4 of the paper, validating that CiSSA produces unbiased signal estimates.
+
+## Simulation Design
+
+Following the paper, we test if the extracted signals satisfy:
+$$y_t = a + b\hat{y}_t + u_t$$
+
+where ideally $a = 0$ (unbiasedness) and $b = 1$ (correct scale).
+
+```{r example2-simulation, cache=TRUE}
+# Number of simulations
+n_sim <- 100
+
+# Storage for results
+results <- data.frame(
+  sim = integer(),
+  component = character(),
+  a = numeric(),
+  b = numeric()
+)
+
+cat("Running", n_sim, "simulations...\n")
+
+pb <- txtProgressBar(min = 0, max = n_sim, style = 3)
+
+for (i in 1:n_sim) {
+  # Simulate data using the structural model
+  sim <- simulate_structural_ts(T = 193, cycle_period = 48, seasonal_period = 12)
+  
+  # Define groups for L = 48
+  L <- 48
+  groups <- list(
+    Trend = c(1),
+    Cycle = c(2),
+    Seasonal = c(5, 9, 13, 17, 21, 25)
+  )
+  
+ # Apply CiSSA
+  cissa_result <- cissa(sim$x, L = L, groups = groups)
+  
+  # Regression analysis for each component
+  # Trend
+  lm_trend <- lm(sim$trend ~ cissa_result$grouped_series$Trend)
+  results <- rbind(results, data.frame(
+    sim = i, component = "Trend",
+    a = coef(lm_trend)[1], b = coef(lm_trend)[2]
+  ))
+  
+  # Cycle
+  lm_cycle <- lm(sim$cycle ~ cissa_result$grouped_series$Cycle)
+  results <- rbind(results, data.frame(
+    sim = i, component = "Cycle",
+    a = coef(lm_cycle)[1], b = coef(lm_cycle)[2]
+  ))
+  
+  # Seasonal
+  lm_seasonal <- lm(sim$seasonal ~ cissa_result$grouped_series$Seasonal)
+  results <- rbind(results, data.frame(
+    sim = i, component = "Seasonal",
+    a = coef(lm_seasonal)[1], b = coef(lm_seasonal)[2]
+  ))
+  
+  setTxtProgressBar(pb, i)
+}
+close(pb)
+```
+
+## Results Summary (Similar to Table 1 in the Paper)
+
+```{r example2-table}
+# Calculate quantiles by component
+summary_table <- aggregate(cbind(a, b) ~ component, data = results, 
+                           FUN = function(x) {
+                             quantile(x, probs = c(0.05, 0.25, 0.50, 0.75, 0.95))
+                           })
+
+# Reshape for display
+summary_display <- data.frame(
+  Component = rep(c("Trend", "Cycle", "Seasonal"), each = 2),
+  Coefficient = rep(c("a (intercept)", "b (slope)"), 3),
+  Q5 = numeric(6),
+  Q25 = numeric(6),
+  Q50 = numeric(6),
+  Q75 = numeric(6),
+  Q95 = numeric(6)
+)
+
+for (comp in c("Trend", "Cycle", "Seasonal")) {
+  comp_data <- results[results$component == comp, ]
+  idx_a <- which(summary_display$Component == comp & summary_display$Coefficient == "a (intercept)")
+  idx_b <- which(summary_display$Component == comp & summary_display$Coefficient == "b (slope)")
+  
+  summary_display[idx_a, 3:7] <- round(quantile(comp_data$a, c(0.05, 0.25, 0.50, 0.75, 0.95)), 4)
+  summary_display[idx_b, 3:7] <- round(quantile(comp_data$b, c(0.05, 0.25, 0.50, 0.75, 0.95)), 4)
+}
+
+knitr::kable(summary_display,
+             caption = "Quantiles of Regression Coefficients (Target: a=0, b=1)",
+             col.names = c("Component", "Coefficient", "5%", "25%", "50%", "75%", "95%"))
+```
+
+## Distribution of Coefficients
+
+```{r example2-plots, fig.height=8}
+par(mfrow = c(3, 2), mar = c(4, 4, 3, 1))
+
+for (comp in c("Trend", "Cycle", "Seasonal")) {
+  comp_data <- results[results$component == comp, ]
+  
+  # Intercept a
+  hist(comp_data$a, breaks = 20, main = paste(comp, "- Intercept (a)"),
+       xlab = "a", col = "lightblue", border = "white", freq = FALSE)
+  abline(v = 0, col = "red", lwd = 2, lty = 2)
+  abline(v = median(comp_data$a), col = "blue", lwd = 2)
+  legend("topright", c("Target (0)", "Median"), 
+         col = c("red", "blue"), lty = c(2, 1), lwd = 2, cex = 0.7)
+  
+  # Slope b
+  hist(comp_data$b, breaks = 20, main = paste(comp, "- Slope (b)"),
+       xlab = "b", col = "lightgreen", border = "white", freq = FALSE)
+  abline(v = 1, col = "red", lwd = 2, lty = 2)
+  abline(v = median(comp_data$b), col = "blue", lwd = 2)
+  legend("topright", c("Target (1)", "Median"), 
+         col = c("red", "blue"), lty = c(2, 1), lwd = 2, cex = 0.7)
+}
+
+par(mfrow = c(1, 1))
+```
+
+**Interpretation**: The medians of $a$ are close to 0 and $b$ close to 1, confirming that CiSSA produces unbiased estimates with correct scaling. The cycle component shows slightly more dispersion, which is consistent with the paper's findings.
+
+---
+
+# Example 3: W-Correlation and Separability Analysis
+
+## What is W-Correlation?
+
+The **w-correlation** measures the separability between extracted components:
+
+$$\rho_{12}^w = \frac{\langle x^{(1)}, x^{(2)} \rangle_w}{\|x^{(1)}\|_w \|x^{(2)}\|_w}$$
+
+Components with **w-correlation close to 0** are well-separated (orthogonal).
+
+```{r example3-setup}
+# Simulate data
+set.seed(456)
+sim <- simulate_structural_ts(T = 300, cycle_period = 48, seasonal_period = 12)
+
+# Apply CiSSA
+L <- 48
+result <- cissa(sim$x, L = L)
+
+# Compute w-correlation matrix
+wcorr <- compute_wcorr(result, max_components = 25)
+```
+
+## W-Correlation Matrix Visualization
+
+```{r example3-wcorr, fig.height=6}
+# Heatmap of w-correlations
+par(mar = c(5, 5, 4, 6))
+
+image(1:25, 1:25, abs(wcorr), 
+      col = colorRampPalette(c("white", "steelblue", "darkblue"))(100),
+      xlab = "Elementary Component", ylab = "Elementary Component",
+      main = "W-Correlation Matrix (|ρ|)\nWhite = Well Separated, Blue = Correlated",
+      axes = FALSE)
+
+axis(1, at = seq(1, 25, by = 2))
+axis(2, at = seq(1, 25, by = 2))
+box()
+
+# Add color legend
+legend_vals <- seq(0, 1, by = 0.2)
+legend("right", inset = c(-0.15, 0), 
+       legend = legend_vals, 
+       fill = colorRampPalette(c("white", "steelblue", "darkblue"))(6),
+       title = "|ρ|", xpd = TRUE, cex = 0.8)
+```
+
+## Separability Statistics
+
+```{r example3-stats}
+# Off-diagonal correlations
+off_diag <- wcorr[upper.tri(wcorr)]
+
+sep_stats <- data.frame(
+  Statistic = c("Mean |correlation|", "Max |correlation|", 
+                "Min |correlation|", "Proportion |ρ| < 0.1",
+                "Proportion |ρ| < 0.05"),
+  Value = c(
+    round(mean(abs(off_diag)), 4),
+    round(max(abs(off_diag)), 4),
+    round(min(abs(off_diag)), 4),
+    paste0(round(mean(abs(off_diag) < 0.1) * 100, 1), "%"),
+    paste0(round(mean(abs(off_diag) < 0.05) * 100, 1), "%")
+  )
+)
+
+knitr::kable(sep_stats, caption = "Separability Analysis of CiSSA Components")
+```
+
+```{r example3-hist, fig.height=4}
+# Histogram of off-diagonal correlations
+hist(abs(off_diag), breaks = 30, 
+     main = "Distribution of Off-Diagonal |W-Correlations|",
+     xlab = "|W-Correlation|", col = "lightblue", border = "white",
+     freq = FALSE)
+abline(v = 0.1, col = "red", lwd = 2, lty = 2)
+legend("topright", "Threshold = 0.1", col = "red", lty = 2, lwd = 2)
+```
+
+**Conclusion**: CiSSA produces **strongly separable components** with most w-correlations near zero, as shown in Figure 4 of the paper.
+
+---
+
+# Example 4: Effect of Window Length
+
+## Why Window Length Matters
+
+The window length $L$ determines:
+
+1. **Frequency resolution**: $\Delta f = \frac{1}{L}$
+2. **Maximum detectable period**: $L$ time units
+3. **Number of elementary components**: $L$
+
+```{r example4-setup}
+# Create simple test signal
+set.seed(789)
+T <- 300
+t <- 1:T
+trend <- 10 + 0.05 * t
+cycle <- 5 * sin(2 * pi * t / 48)     # 48-month cycle
+seasonal <- 3 * sin(2 * pi * t / 12)  # 12-month seasonality
+noise <- rnorm(T, 0, 1)
+x <- trend + cycle + seasonal + noise
+
+# Test different window lengths
+L_values <- c(24, 48, 72, 96, 120)
+```
+
+## Frequency Resolution Comparison
+
+```{r example4-table}
+resolution_table <- data.frame(
+  `Window Length (L)` = L_values,
+  `Freq Resolution` = round(1 / L_values, 4),
+  `Max Period` = L_values,
+  `Can Detect 48-mo Cycle` = ifelse(L_values >= 48, "Yes", "No"),
+  `Can Detect 12-mo Season` = ifelse(L_values >= 12, "Yes", "Yes")
+)
+
+knitr::kable(resolution_table, 
+             caption = "Frequency Resolution by Window Length")
+```
+
+## PSD Comparison
+
+```{r example4-psd, fig.height=10}
+par(mfrow = c(length(L_values), 1), mar = c(3, 4, 2, 1))
+
+for (L in L_values) {
+  result <- cissa(x, L = L)
+  
+  # Plot PSD
+  freqs <- result$frequencies[1:floor(L/2)]
+  psd <- result$eigenvalues[1:floor(L/2)]
+  psd_db <- 10 * log10(pmax(psd, .Machine$double.eps))
+  
+  plot(freqs, psd_db, type = "l", 
+       main = paste("L =", L, "| Resolution =", round(1/L, 4)),
+       xlab = "Normalized Frequency", ylab = "PSD (dB)", 
+       col = "blue", lwd = 1.5, xlim = c(0, 0.15))
+  
+  # Mark expected frequencies
+  abline(v = 1/48, col = "green", lty = 2, lwd = 2)   # Cycle
+  abline(v = 1/12, col = "orange", lty = 2, lwd = 2)  # Seasonal
+  
+  if (L == L_values[1]) {
+    legend("topright", c("Cycle (1/48)", "Seasonal (1/12)"),
+           col = c("green", "orange"), lty = 2, lwd = 2, cex = 0.8)
+  }
+}
+
+par(mfrow = c(1, 1))
+```
+
+**Key Insight**: Larger $L$ provides better frequency resolution but requires more data. Choose $L$ to be a multiple of your expected periodicities.
+
+---
+
+# Example 5: AM-FM Signal Analysis
+
+This example replicates the synthetic AM-FM signal analysis from Section 6 of the paper.
+
+## Signal Definition
+
+The signal consists of two components:
+
+1. **x₁(t)**: Amplitude-modulated signal
+   $$x_1(t) = [1 + 0.2\sin(2\pi f_{A,1} t)] \cos(2\pi f_1 t)$$
+
+2. **x₂(t)**: Amplitude and frequency modulated signal
+   $$x_2(t) = [0.1 + 0.05\cos(2\pi f_{A,2} t)] \cos\left(2\pi f_{2,0} t + 2\pi f_{2,1} \frac{t^2}{2T}\right)$$
+
+```{r example5-signal}
+# Parameters from the paper
+fs <- 100        # Sample frequency (Hz)
+duration <- 10   # seconds
+T <- fs * duration
+t <- (0:(T - 1)) / fs
+
+# Signal 1: AM signal
+f1 <- 5          # carrier frequency (Hz)
+fA1 <- 1         # amplitude modulation frequency (Hz)
+a1 <- 1 + 0.2 * sin(2 * pi * fA1 * t)
+x1 <- a1 * cos(2 * pi * f1 * t)
+
+# Signal 2: AM-FM signal
+f2_0 <- 40       # initial frequency (Hz)
+f2_1 <- 25       # frequency sweep (Hz)
+fA2 <- 10        # amplitude modulation frequency (Hz)
+a2 <- 0.1 + 0.05 * cos(2 * pi * fA2 * t)
+
+# Instantaneous phase (chirp signal)
+phase2 <- 2 * pi * (f2_0 * t + f2_1 * t^2 / (2 * duration))
+x2 <- a2 * cos(phase2)
+
+# Combined signal
+x <- x1 + x2
+```
+
+## Visualize the Signals
+
+```{r example5-plot-signals, fig.height=8}
+par(mfrow = c(3, 1), mar = c(4, 4, 2, 1))
+
+# x1 component
+plot(t[1:500], x1[1:500], type = "l", 
+     main = expression(paste("x"[1], "(t): AM Signal at 5 Hz")),
+     xlab = "Time (s)", ylab = "Amplitude", col = "blue", lwd = 1)
+
+# x2 component  
+plot(t[1:500], x2[1:500], type = "l",
+     main = expression(paste("x"[2], "(t): AM-FM Signal (40-65 Hz chirp)")),
+     xlab = "Time (s)", ylab = "Amplitude", col = "green", lwd = 1)
+
+# Combined
+plot(t[1:500], x[1:500], type = "l",
+     main = "Combined Signal x(t) = x₁(t) + x₂(t)",
+     xlab = "Time (s)", ylab = "Amplitude", col = "black", lwd = 1)
+
+par(mfrow = c(1, 1))
+```
+
+## Apply CiSSA
+
+```{r example5-cissa}
+# Apply CiSSA with L = 200 (as in the paper)
+L <- 200
+result <- cissa(x, L = L)
+
+# Plot PSD in Hz
+freqs_hz <- result$frequencies[1:floor(L/2)] * fs
+psd <- result$eigenvalues[1:floor(L/2)]
+psd_db <- 10 * log10(pmax(psd, .Machine$double.eps))
+```
+
+```{r example5-psd, fig.height=5}
+plot(freqs_hz, psd_db, type = "l",
+     main = "CiSSA Power Spectral Density",
+     xlab = "Frequency (Hz)", ylab = "PSD (dB)",
+     col = "blue", lwd = 1.5)
+
+# Mark signal frequencies
+abline(h = 0, col = "gray", lty = 2)
+abline(v = f1, col = "green", lwd = 2, lty = 2)
+abline(v = c(f2_0, f2_0 + f2_1), col = "orange", lwd = 2, lty = 2)
+
+legend("topright", 
+       c("PSD", paste("x₁ at", f1, "Hz"), 
+         paste("x₂ range:", f2_0, "-", f2_0 + f2_1, "Hz")),
+       col = c("blue", "green", "orange"),
+       lty = c(1, 2, 2), lwd = 2, cex = 0.8)
+```
+
+## Extract and Compare Components
+
+```{r example5-extract, fig.height=6}
+# Extract x1 (at 5 Hz = normalized freq 0.05)
+k_x1 <- freq_to_index(f1 / fs, L)
+x1_est <- result$elementary_series[[k_x1]]
+
+# Extract x2 (frequency range 0.4 to 0.65)
+k_x2_min <- freq_to_index(f2_0 / fs, L)
+k_x2_max <- freq_to_index((f2_0 + f2_1) / fs, L)
+
+x2_est <- rep(0, T)
+for (k in k_x2_min:min(k_x2_max, length(result$elementary_series))) {
+  x2_est <- x2_est + result$elementary_series[[k]]
+}
+
+# Plot comparisons
+par(mfrow = c(2, 1), mar = c(4, 4, 2, 1))
+
+# x1 comparison
+plot(t[1:400], x1[1:400], type = "l",
+     main = "x₁ Component: True vs CiSSA Estimate",
+     xlab = "Time (s)", ylab = "Amplitude", col = "blue", lwd = 1.5)
+lines(t[1:400], x1_est[1:400], col = "red", lty = 2, lwd = 1.5)
+legend("topright", c("True", "CiSSA"), col = c("blue", "red"), lty = 1:2, lwd = 1.5)
+
+# x2 comparison
+plot(t[1:400], x2[1:400], type = "l",
+     main = "x₂ Component: True vs CiSSA Estimate",
+     xlab = "Time (s)", ylab = "Amplitude", col = "blue", lwd = 1.5)
+lines(t[1:400], x2_est[1:400], col = "red", lty = 2, lwd = 1.5)
+legend("topright", c("True", "CiSSA"), col = c("blue", "red"), lty = 1:2, lwd = 1.5)
+
+par(mfrow = c(1, 1))
+```
+
+```{r example5-quality}
+# Extraction quality
+quality_amfm <- data.frame(
+  Component = c("x₁ (AM at 5 Hz)", "x₂ (AM-FM 40-65 Hz)"),
+  Correlation = c(round(cor(x1, x1_est), 4), round(cor(x2, x2_est), 4))
+)
+
+knitr::kable(quality_amfm, caption = "AM-FM Signal Extraction Quality")
+```
+
+**Key Finding**: CiSSA successfully extracts both the constant-frequency AM signal and the frequency-modulated chirp signal by combining adjacent frequency components.
+
+---
+
+# Summary and Best Practices
+
+## Choosing Window Length
+
+| Data Type | Recommended L | Rationale |
+|-----------|---------------|-----------|
+| Monthly economic data | Multiple of 12 and cycle length | Captures seasonality and business cycles |
+| Quarterly data | Multiple of 4 | Captures quarterly patterns |
+| High-frequency signals | $\geq$ 2 × max expected period | Nyquist-like criterion |
+
+## Frequency Grouping Guidelines
+
+1. **Trend**: $k = 1$ (and possibly $k = 2$ for very smooth trends)
+2. **Cycle**: Indices corresponding to $\frac{1}{\text{max period}}$ to $\frac{1}{\text{min period}}$
+3. **Seasonality**: Indices at $\frac{j}{s}$ for $j = 1, \ldots, \lfloor s/2 \rfloor$
+
+## Key Equations Reference
+
+| Equation | Purpose |
+|----------|---------|
+| $w_k = \frac{k-1}{L}$ | Frequency for eigenvalue $k$ |
+| $\lambda_k \approx f(w_k)$ | PSD at frequency $w_k$ |
+| $B_k = \{k, L+2-k\}$ | Eigenvalue pair for frequency $w_k$ |
+
+---
+
+# Session Info
+
+```{r session-info}
+sessionInfo()
+```
