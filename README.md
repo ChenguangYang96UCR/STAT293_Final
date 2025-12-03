@@ -86,8 +86,8 @@ seasonal_component <- result$grouped_series$Seasonal
 cissa-r/
 ├── README.md              # This file
 ├── cissa.R                # Core CiSSA implementation
-├── cissa_examples.R       # Example scripts
-├── cissa_tutorial.Rmd     # R Markdown tutorial
+├── 31_Examples.Rmd        # R Markdown examples
+├── FinalReport.pdf        # Final report
 ```
 
 ## 📖 Documentation
@@ -315,18 +315,9 @@ For a comprehensive tutorial with explanations and visualizations, see the R Mar
 
 ```r
 # Open in RStudio and knit to HTML
-rmarkdown::render("cissa_tutorial.Rmd")
+rmarkdown::render("31_Examples.Rmd")
 ```
 
-## 🤝 Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request.
-
-1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/AmazingFeature`)
-3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
-4. Push to the branch (`git push origin feature/AmazingFeature`)
-5. Open a Pull Request
 
 ## 📄 License
 
