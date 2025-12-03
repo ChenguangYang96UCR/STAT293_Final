@@ -141,7 +141,7 @@ t <- 1:T
 # Trend: Smooth upward trend with some curvature
 trend <- 50 + 0.1 * t + 20 * sin(2 * pi * t / (T * 1.5))
 
-# Business cycle: 4-8 year cycles (48-96 months)
+# Business cycle: 4-6 year cycles (48-96 months)
 cycle <- 8 * sin(2 * pi * t / 72) +  # ~6 year cycle
          4 * sin(2 * pi * t / 48)     # ~4 year cycle
 
